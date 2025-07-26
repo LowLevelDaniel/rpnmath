@@ -29,14 +29,18 @@ int rpnmath_stack_isempty(rpnmath_stack_t *stack);
 
 // Push operations
 void rpnmath_stack_pushc(rpnmath_stack_t *stack, rpnmath_item_const_t *item);
-void rpnmath_stack_pushvr(rpnmath_stack_t *stack, rpnmath_item_varref_t *item);
+void rpnmath_stack_pushlr(rpnmath_stack_t *stack, rpnmath_item_localref_t *item);
 void rpnmath_stack_pushop(rpnmath_stack_t *stack, rpnmath_item_op_t *item);
+void rpnmath_stack_pushvop(rpnmath_stack_t *stack, rpnmath_item_vop_t *item);
+void rpnmath_stack_pushcfop(rpnmath_stack_t *stack, rpnmath_item_cfop_t *item);
 
 // Pop operations
 rpnmath_itemkind_t rpnmath_stack_peekk(rpnmath_stack_t *stack);
 rpnmath_item_const_t rpnmath_stack_popc(rpnmath_stack_t *stack);
-rpnmath_item_varref_t rpnmath_stack_popvr(rpnmath_stack_t *stack);
+rpnmath_item_localref_t rpnmath_stack_poplr(rpnmath_stack_t *stack);
 rpnmath_item_op_t rpnmath_stack_popop(rpnmath_stack_t *stack);
+rpnmath_item_vop_t rpnmath_stack_popvop(rpnmath_stack_t *stack);
+rpnmath_item_cfop_t rpnmath_stack_popcfop(rpnmath_stack_t *stack);
 
 // Variable operations
 int rpnmath_stack_assign_variable(rpnmath_stack_t *stack, size_t var_id, rpnmath_item_const_t *value);

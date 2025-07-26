@@ -1,24 +1,40 @@
-#ifndef RPNMATH_ITEM_H
-#define RPNMATH_ITEM_H
+#ifndef RPNMATH_ITEMS_H
+#define RPNMATH_ITEMS_H
 
 #include <stddef.h>
 #include "type.h"
 
 typedef enum rpnmath_itemkind {
-  RPNMATH_ITEMKIND_VOID,
+  RPNMATH_ITEMKIND_VOID, // No Operation
   RPNMATH_ITEMKIND_CONST,  // Constant
-  RPNMATH_ITEMKIND_VARREF, // Variable Reference ($0, $1, etc.)
-  RPNMATH_ITEMKIND_OP,     // Operation (binary ops, assignment, return, etc.)
+  RPNMATH_ITEMKIND_OP, // Operation
+  RPNMATH_ITEMKIND_LREF, // Local Reference ($0, $1, etc.)
+  RPNMATH_ITEMKIND_VOP, // Variable Operation
+  RPNMATH_ITEMKIND_CFOP, // Control Flow
 } rpnmath_itemkind_t;
 
 typedef enum rpnmath_op {
-  RPNMATH_OP_ADD,    // Binary: 2 args, 1 return
-  RPNMATH_OP_SUB,    // Binary: 2 args, 1 return
-  RPNMATH_OP_MUL,    // Binary: 2 args, 1 return
-  RPNMATH_OP_DIV,    // Binary: 2 args, 1 return
-  RPNMATH_OP_ASSIGN, // Assignment: 2 args (value, variable), 0 returns
-  RPNMATH_OP_RETURN, // Return: 1 arg, 1 return (stops execution)
+  RPNMATH_OP_ADD,    // (Value,Value)-> Value
+  RPNMATH_OP_SUB,    // (Value,Value)-> Value
+  RPNMATH_OP_MUL,    // (Value,Value)-> Value
+  RPNMATH_OP_DIV,    // (Value,Value)-> Value
+  RPNMATH_OP_ASSIGN, // (Value, Variable) -> Void
 } rpnmath_op_t;
+
+typedef enum rpnmath_vop {
+  RPNMATH_VOP_RET, // (...) -> Exit
+  RPNMATH_VOP_CALL, // (...) -> (...)
+} rpnmath_vop_t;
+
+typedef enum rpnmath_cfop {
+  RPNMATH_CFOP_IF, // COND
+  RPNMATH_CFOP_ELIF, // COND
+  RPNMATH_CFOP_ELSE, //
+  RPNMATH_CFOP_LOOP, //
+  RPNMATH_CFOP_WHILE, // COND
+  RPNMATH_CFOP_MERGE, //
+  RPNMATH_CFOP_END, // END
+} rpnmath_cfop_t;
 
 typedef struct rpnmath_item {
   rpnmath_itemkind_t kind;
@@ -31,19 +47,38 @@ typedef struct rpnmath_item_const {
   size_t size; // if an i23 is used then size will be 3 bytes as it is rounded up
 } rpnmath_item_const_t;
 
-typedef struct rpnmath_item_varref {
+typedef struct rpnmath_item_localref {
   rpnmath_itemkind_t kind;
   size_t variable_id; // variable identifier ($0 = 0, $1 = 1, etc.)
-} rpnmath_item_varref_t;
+} rpnmath_item_localref_t;
 
 typedef struct rpnmath_item_op {
   rpnmath_itemkind_t kind;
   rpnmath_op_t operation;
 } rpnmath_item_op_t;
 
+typedef struct rpnmath_item_vop {
+  // Example 10 ret/1 to return 10
+  rpnmath_itemkind_t kind;
+  rpnmath_vop_t operation;
+  size_t argcount;
+  size_t retcount;
+} rpnmath_item_vop_t;
+
+typedef struct rpnmath_item_cfop {
+  rpnmath_itemkind_t kind;
+  rpnmath_cfop_t operation;
+} rpnmath_item_cfop_t;
+
 // Helper functions to get operation properties
 int rpnmath_op_arg_count(rpnmath_op_t op);
 int rpnmath_op_return_count(rpnmath_op_t op);
 const char* rpnmath_op_name(rpnmath_op_t op);
 
-#endif // RPNMATH_ITEM_H
+int rpnmath_vop_arg_count(rpnmath_vop_t op, size_t argcount);
+int rpnmath_vop_return_count(rpnmath_vop_t op, size_t retcount);
+const char* rpnmath_vop_name(rpnmath_vop_t op);
+
+const char* rpnmath_cfop_name(rpnmath_cfop_t op);
+
+#endif // RPNMATH_ITEMS_H

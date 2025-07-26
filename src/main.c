@@ -18,11 +18,24 @@ int is_number(const char *str) {
   return *endptr == '\0';
 }
 
-// Helper function to determine if a string is an operation
+// Helper function to determine if a string is a basic operation
 int is_operation(const char *str) {
   if (strlen(str) != 1) return 0;
   return (*str == '+' || *str == '-' || *str == '*' || *str == '/' || 
-          *str == '=' || *str == '.');
+          *str == '=');
+}
+
+// Helper function to determine if a string is a variable operation
+int is_vop(const char *str) {
+  return (strcmp(str, "ret") == 0 || strcmp(str, "call") == 0);
+}
+
+// Helper function to determine if a string is a control flow operation
+int is_cfop(const char *str) {
+  return (strcmp(str, "if") == 0 || strcmp(str, "elif") == 0 || 
+          strcmp(str, "else") == 0 || strcmp(str, "loop") == 0 ||
+          strcmp(str, "while") == 0 || strcmp(str, "merge") == 0 ||
+          strcmp(str, "end") == 0);
 }
 
 // Helper function to determine if a string is a variable reference ($0, $1, etc.)
@@ -37,6 +50,31 @@ int is_variable(const char *str) {
   return 1;
 }
 
+// Helper function to check if string contains "/argcount" pattern for VOP
+int parse_vop_syntax(const char *str, char *op_name, size_t *argcount, size_t *retcount) {
+  // Look for pattern like "ret/1" or "call/2/1"
+  char *slash = strchr(str, '/');
+  if (!slash) return 0;
+  
+  // Copy operation name
+  size_t op_len = slash - str;
+  if (op_len >= 64) return 0; // Prevent buffer overflow
+  strncpy(op_name, str, op_len);
+  op_name[op_len] = '\0';
+  
+  // Parse argcount
+  *argcount = strtoul(slash + 1, &slash, 10);
+  
+  // Parse retcount if present
+  if (slash && *slash == '/') {
+    *retcount = strtoul(slash + 1, NULL, 10);
+  } else {
+    *retcount = 1; // Default return count
+  }
+  
+  return 1;
+}
+
 // Helper function to get operation enum from string
 rpnmath_op_t get_operation(const char *str) {
   switch (*str) {
@@ -45,9 +83,27 @@ rpnmath_op_t get_operation(const char *str) {
     case '*': return RPNMATH_OP_MUL;
     case '/': return RPNMATH_OP_DIV;
     case '=': return RPNMATH_OP_ASSIGN;
-    case '.': return RPNMATH_OP_RETURN;
     default: return RPNMATH_OP_ADD; // fallback
   }
+}
+
+// Helper function to get VOP enum from string
+rpnmath_vop_t get_vop(const char *str) {
+  if (strcmp(str, "ret") == 0) return RPNMATH_VOP_RET;
+  if (strcmp(str, "call") == 0) return RPNMATH_VOP_CALL;
+  return RPNMATH_VOP_RET; // fallback
+}
+
+// Helper function to get CFOP enum from string
+rpnmath_cfop_t get_cfop(const char *str) {
+  if (strcmp(str, "if") == 0) return RPNMATH_CFOP_IF;
+  if (strcmp(str, "elif") == 0) return RPNMATH_CFOP_ELIF;
+  if (strcmp(str, "else") == 0) return RPNMATH_CFOP_ELSE;
+  if (strcmp(str, "loop") == 0) return RPNMATH_CFOP_LOOP;
+  if (strcmp(str, "while") == 0) return RPNMATH_CFOP_WHILE;
+  if (strcmp(str, "merge") == 0) return RPNMATH_CFOP_MERGE;
+  if (strcmp(str, "end") == 0) return RPNMATH_CFOP_END;
+  return RPNMATH_CFOP_END; // fallback
 }
 
 // Helper function to get variable ID from string ($0 -> 0, $1 -> 1, etc.)
@@ -104,13 +160,33 @@ void push_operation(rpnmath_stack_t *stack, rpnmath_op_t operation) {
   rpnmath_stack_pushop(stack, &item);
 }
 
-// Helper function to create and push a variable reference to stack
-void push_variable(rpnmath_stack_t *stack, size_t var_id) {
-  rpnmath_item_varref_t item = {0};
-  item.kind = RPNMATH_ITEMKIND_VARREF;
+// Helper function to create and push a variable operation to stack
+void push_vop(rpnmath_stack_t *stack, rpnmath_vop_t operation, size_t argcount, size_t retcount) {
+  rpnmath_item_vop_t item = {0};
+  item.kind = RPNMATH_ITEMKIND_VOP;
+  item.operation = operation;
+  item.argcount = argcount;
+  item.retcount = retcount;
+  
+  rpnmath_stack_pushvop(stack, &item);
+}
+
+// Helper function to create and push a control flow operation to stack
+void push_cfop(rpnmath_stack_t *stack, rpnmath_cfop_t operation) {
+  rpnmath_item_cfop_t item = {0};
+  item.kind = RPNMATH_ITEMKIND_CFOP;
+  item.operation = operation;
+  
+  rpnmath_stack_pushcfop(stack, &item);
+}
+
+// Helper function to create and push a local reference to stack
+void push_localref(rpnmath_stack_t *stack, size_t var_id) {
+  rpnmath_item_localref_t item = {0};
+  item.kind = RPNMATH_ITEMKIND_LREF;
   item.variable_id = var_id;
   
-  rpnmath_stack_pushvr(stack, &item);
+  rpnmath_stack_pushlr(stack, &item);
 }
 
 // Helper function to get the result value from a const item
@@ -138,14 +214,15 @@ long long get_result_value(rpnmath_item_const_t *result_item) {
 int main() {
   char expression[1000];
   
-  printf("RPN Calculator with SSA Variables\n");
-  printf("=================================\n");
+  printf("RPN Calculator with SSA Variables (New Item System)\n");
+  printf("==================================================\n");
   printf("Supported operators: +, -, *, /\n");
   printf("Variables: $0, $1, $2, ... (single static assignment)\n");
   printf("Assignment: = (assigns top stack value to variable)\n");
-  printf("Return: . (returns top stack value and stops execution)\n");
-  printf("Example: \"10 $0 = 20 $0 + .\" assigns 10 to $0, then returns $0 + 20\n");
-  printf("Example: \"5 $0 = 3 $1 = $0 $1 * .\" assigns 5 to $0, 3 to $1, returns $0 * $1\n");
+  printf("Return: ret/argcount (returns values and stops execution)\n");
+  printf("Control Flow: if, elif, else, loop, while, merge, end (not yet implemented)\n");
+  printf("Example: \"10 $0 = 20 $0 + ret/1\" assigns 10 to $0, then returns $0 + 20\n");
+  printf("Example: \"5 $0 = 3 $1 = $0 $1 * ret/1\" assigns 5 to $0, 3 to $1, returns $0 * $1\n");
   printf("Enter 'quit' to exit\n\n");
   
   while (1) {
@@ -200,8 +277,8 @@ int main() {
           break;
         }
         
-        push_variable(&stack, var_id);
-        printf("  Pushed variable reference: $%zu\n", var_id);
+        push_localref(&stack, var_id);
+        printf("  Pushed local reference: $%zu\n", var_id);
         
       } else if (is_operation(token)) {
         rpnmath_op_t operation = get_operation(token);
@@ -210,9 +287,30 @@ int main() {
         printf("  Pushed operation: %s (%s)\n", token, rpnmath_op_name(operation));
         
       } else {
-        printf("Error: Unknown token '%s'\n", token);
-        error = 1;
-        break;
+        // Check for VOP syntax (like "ret/1")
+        char op_name[64];
+        size_t argcount, retcount;
+        
+        if (parse_vop_syntax(token, op_name, &argcount, &retcount)) {
+          if (is_vop(op_name)) {
+            rpnmath_vop_t vop = get_vop(op_name);
+            push_vop(&stack, vop, argcount, retcount);
+            printf("  Pushed variable operation: %s/%zu/%zu (%s)\n", 
+                   op_name, argcount, retcount, rpnmath_vop_name(vop));
+          } else {
+            printf("Error: Unknown variable operation '%s'\n", op_name);
+            error = 1;
+            break;
+          }
+        } else if (is_cfop(token)) {
+          rpnmath_cfop_t cfop = get_cfop(token);
+          push_cfop(&stack, cfop);
+          printf("  Pushed control flow operation: %s (%s)\n", token, rpnmath_cfop_name(cfop));
+        } else {
+          printf("Error: Unknown token '%s'\n", token);
+          error = 1;
+          break;
+        }
       }
       
       token = strtok(NULL, " \t");

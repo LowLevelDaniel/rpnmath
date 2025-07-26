@@ -21,8 +21,6 @@ int rpnmath_op_arg_count(rpnmath_op_t op) {
     case RPNMATH_OP_DIV:
     case RPNMATH_OP_ASSIGN:
       return 2;
-    case RPNMATH_OP_RETURN:
-      return 1;
     default:
       return 0;
   }
@@ -34,7 +32,6 @@ int rpnmath_op_return_count(rpnmath_op_t op) {
     case RPNMATH_OP_SUB:
     case RPNMATH_OP_MUL:
     case RPNMATH_OP_DIV:
-    case RPNMATH_OP_RETURN:
       return 1;
     case RPNMATH_OP_ASSIGN:
       return 0;
@@ -50,7 +47,49 @@ const char* rpnmath_op_name(rpnmath_op_t op) {
     case RPNMATH_OP_MUL: return "multiply";
     case RPNMATH_OP_DIV: return "divide";
     case RPNMATH_OP_ASSIGN: return "assign";
-    case RPNMATH_OP_RETURN: return "return";
+    default: return "unknown";
+  }
+}
+
+int rpnmath_vop_arg_count(rpnmath_vop_t op, size_t argcount) {
+  switch (op) {
+    case RPNMATH_VOP_RET:
+      return (int)argcount;
+    case RPNMATH_VOP_CALL:
+      return (int)argcount;
+    default:
+      return 0;
+  }
+}
+
+int rpnmath_vop_return_count(rpnmath_vop_t op, size_t retcount) {
+  switch (op) {
+    case RPNMATH_VOP_RET:
+      return (int)retcount;
+    case RPNMATH_VOP_CALL:
+      return (int)retcount;
+    default:
+      return 0;
+  }
+}
+
+const char* rpnmath_vop_name(rpnmath_vop_t op) {
+  switch (op) {
+    case RPNMATH_VOP_RET: return "return";
+    case RPNMATH_VOP_CALL: return "call";
+    default: return "unknown";
+  }
+}
+
+const char* rpnmath_cfop_name(rpnmath_cfop_t op) {
+  switch (op) {
+    case RPNMATH_CFOP_IF: return "if";
+    case RPNMATH_CFOP_ELIF: return "elif";
+    case RPNMATH_CFOP_ELSE: return "else";
+    case RPNMATH_CFOP_LOOP: return "loop";
+    case RPNMATH_CFOP_WHILE: return "while";
+    case RPNMATH_CFOP_MERGE: return "merge";
+    case RPNMATH_CFOP_END: return "end";
     default: return "unknown";
   }
 }
@@ -126,8 +165,8 @@ void rpnmath_stack_pushc(rpnmath_stack_t *stack, rpnmath_item_const_t *item) {
   stack->size += item->size;
 }
 
-void rpnmath_stack_pushvr(rpnmath_stack_t *stack, rpnmath_item_varref_t *item) {
-  size_t item_size = sizeof(rpnmath_item_varref_t);
+void rpnmath_stack_pushlr(rpnmath_stack_t *stack, rpnmath_item_localref_t *item) {
+  size_t item_size = sizeof(rpnmath_item_localref_t);
   rpnmath_stack_ensure_space(stack, item_size);
   
   memcpy(stack->data + stack->size, item, item_size);
@@ -136,6 +175,22 @@ void rpnmath_stack_pushvr(rpnmath_stack_t *stack, rpnmath_item_varref_t *item) {
 
 void rpnmath_stack_pushop(rpnmath_stack_t *stack, rpnmath_item_op_t *item) {
   size_t item_size = sizeof(rpnmath_item_op_t);
+  rpnmath_stack_ensure_space(stack, item_size);
+  
+  memcpy(stack->data + stack->size, item, item_size);
+  stack->size += item_size;
+}
+
+void rpnmath_stack_pushvop(rpnmath_stack_t *stack, rpnmath_item_vop_t *item) {
+  size_t item_size = sizeof(rpnmath_item_vop_t);
+  rpnmath_stack_ensure_space(stack, item_size);
+  
+  memcpy(stack->data + stack->size, item, item_size);
+  stack->size += item_size;
+}
+
+void rpnmath_stack_pushcfop(rpnmath_stack_t *stack, rpnmath_item_cfop_t *item) {
+  size_t item_size = sizeof(rpnmath_item_cfop_t);
   rpnmath_stack_ensure_space(stack, item_size);
   
   memcpy(stack->data + stack->size, item, item_size);
@@ -160,10 +215,14 @@ rpnmath_itemkind_t rpnmath_stack_peekk(rpnmath_stack_t *stack) {
     if (kind == RPNMATH_ITEMKIND_CONST) {
       rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
       pos += sizeof(rpnmath_item_const_t) + item->size;
-    } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-      pos += sizeof(rpnmath_item_varref_t);
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
     } else if (kind == RPNMATH_ITEMKIND_OP) {
       pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
     } else {
       pos += sizeof(rpnmath_itemkind_t);
     }
@@ -197,10 +256,14 @@ rpnmath_item_const_t rpnmath_stack_popc(rpnmath_stack_t *stack) {
       last_const_size = sizeof(rpnmath_item_const_t) + item->size;
       found_const = 1;
       pos += last_const_size;
-    } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-      pos += sizeof(rpnmath_item_varref_t);
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
     } else if (kind == RPNMATH_ITEMKIND_OP) {
       pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
     } else {
       pos += sizeof(rpnmath_itemkind_t);
     }
@@ -234,19 +297,19 @@ rpnmath_item_const_t rpnmath_stack_popc(rpnmath_stack_t *stack) {
   return result;
 }
 
-rpnmath_item_varref_t rpnmath_stack_popvr(rpnmath_stack_t *stack) {
-  rpnmath_item_varref_t empty_item = {0};
+rpnmath_item_localref_t rpnmath_stack_poplr(rpnmath_stack_t *stack) {
+  rpnmath_item_localref_t empty_item = {0};
   empty_item.kind = RPNMATH_ITEMKIND_VOID;
   
   if (rpnmath_stack_isempty(stack)) {
     return empty_item;
   }
   
-  // Find the last varref item and remove it
+  // Find the last localref item and remove it
   size_t pos = 0;
-  size_t last_varref_pos = 0;
-  size_t last_varref_size = 0;
-  int found_varref = 0;
+  size_t last_lref_pos = 0;
+  size_t last_lref_size = 0;
+  int found_lref = 0;
   
   while (pos < stack->size) {
     if (pos + sizeof(rpnmath_itemkind_t) > stack->size) break;
@@ -256,33 +319,37 @@ rpnmath_item_varref_t rpnmath_stack_popvr(rpnmath_stack_t *stack) {
     if (kind == RPNMATH_ITEMKIND_CONST) {
       rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
       pos += sizeof(rpnmath_item_const_t) + item->size;
-    } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-      last_varref_pos = pos;
-      last_varref_size = sizeof(rpnmath_item_varref_t);
-      found_varref = 1;
-      pos += last_varref_size;
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      last_lref_pos = pos;
+      last_lref_size = sizeof(rpnmath_item_localref_t);
+      found_lref = 1;
+      pos += last_lref_size;
     } else if (kind == RPNMATH_ITEMKIND_OP) {
       pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
     } else {
       pos += sizeof(rpnmath_itemkind_t);
     }
   }
   
-  if (!found_varref) {
+  if (!found_lref) {
     return empty_item;
   }
   
-  // Copy the varref item
-  rpnmath_item_varref_t result = *(rpnmath_item_varref_t*)(stack->data + last_varref_pos);
+  // Copy the localref item
+  rpnmath_item_localref_t result = *(rpnmath_item_localref_t*)(stack->data + last_lref_pos);
   
   // Remove the item from stack
-  size_t bytes_after = stack->size - (last_varref_pos + last_varref_size);
+  size_t bytes_after = stack->size - (last_lref_pos + last_lref_size);
   if (bytes_after > 0) {
-    memmove(stack->data + last_varref_pos, 
-            stack->data + last_varref_pos + last_varref_size, 
+    memmove(stack->data + last_lref_pos, 
+            stack->data + last_lref_pos + last_lref_size, 
             bytes_after);
   }
-  stack->size -= last_varref_size;
+  stack->size -= last_lref_size;
   
   return result;
 }
@@ -309,13 +376,17 @@ rpnmath_item_op_t rpnmath_stack_popop(rpnmath_stack_t *stack) {
     if (kind == RPNMATH_ITEMKIND_CONST) {
       rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
       pos += sizeof(rpnmath_item_const_t) + item->size;
-    } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-      pos += sizeof(rpnmath_item_varref_t);
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
     } else if (kind == RPNMATH_ITEMKIND_OP) {
       last_op_pos = pos;
       last_op_size = sizeof(rpnmath_item_op_t);
       found_op = 1;
       pos += last_op_size;
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
     } else {
       pos += sizeof(rpnmath_itemkind_t);
     }
@@ -336,6 +407,120 @@ rpnmath_item_op_t rpnmath_stack_popop(rpnmath_stack_t *stack) {
             bytes_after);
   }
   stack->size -= last_op_size;
+  
+  return result;
+}
+
+rpnmath_item_vop_t rpnmath_stack_popvop(rpnmath_stack_t *stack) {
+  rpnmath_item_vop_t empty_item = {0};
+  empty_item.kind = RPNMATH_ITEMKIND_VOID;
+  
+  if (rpnmath_stack_isempty(stack)) {
+    return empty_item;
+  }
+  
+  // Find the last vop item and remove it
+  size_t pos = 0;
+  size_t last_vop_pos = 0;
+  size_t last_vop_size = 0;
+  int found_vop = 0;
+  
+  while (pos < stack->size) {
+    if (pos + sizeof(rpnmath_itemkind_t) > stack->size) break;
+    
+    rpnmath_itemkind_t kind = *(rpnmath_itemkind_t*)(stack->data + pos);
+    
+    if (kind == RPNMATH_ITEMKIND_CONST) {
+      rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
+      pos += sizeof(rpnmath_item_const_t) + item->size;
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
+    } else if (kind == RPNMATH_ITEMKIND_OP) {
+      pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      last_vop_pos = pos;
+      last_vop_size = sizeof(rpnmath_item_vop_t);
+      found_vop = 1;
+      pos += last_vop_size;
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
+    } else {
+      pos += sizeof(rpnmath_itemkind_t);
+    }
+  }
+  
+  if (!found_vop) {
+    return empty_item;
+  }
+  
+  // Copy the vop item
+  rpnmath_item_vop_t result = *(rpnmath_item_vop_t*)(stack->data + last_vop_pos);
+  
+  // Remove the item from stack
+  size_t bytes_after = stack->size - (last_vop_pos + last_vop_size);
+  if (bytes_after > 0) {
+    memmove(stack->data + last_vop_pos, 
+            stack->data + last_vop_pos + last_vop_size, 
+            bytes_after);
+  }
+  stack->size -= last_vop_size;
+  
+  return result;
+}
+
+rpnmath_item_cfop_t rpnmath_stack_popcfop(rpnmath_stack_t *stack) {
+  rpnmath_item_cfop_t empty_item = {0};
+  empty_item.kind = RPNMATH_ITEMKIND_VOID;
+  
+  if (rpnmath_stack_isempty(stack)) {
+    return empty_item;
+  }
+  
+  // Find the last cfop item and remove it
+  size_t pos = 0;
+  size_t last_cfop_pos = 0;
+  size_t last_cfop_size = 0;
+  int found_cfop = 0;
+  
+  while (pos < stack->size) {
+    if (pos + sizeof(rpnmath_itemkind_t) > stack->size) break;
+    
+    rpnmath_itemkind_t kind = *(rpnmath_itemkind_t*)(stack->data + pos);
+    
+    if (kind == RPNMATH_ITEMKIND_CONST) {
+      rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
+      pos += sizeof(rpnmath_item_const_t) + item->size;
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
+    } else if (kind == RPNMATH_ITEMKIND_OP) {
+      pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      last_cfop_pos = pos;
+      last_cfop_size = sizeof(rpnmath_item_cfop_t);
+      found_cfop = 1;
+      pos += last_cfop_size;
+    } else {
+      pos += sizeof(rpnmath_itemkind_t);
+    }
+  }
+  
+  if (!found_cfop) {
+    return empty_item;
+  }
+  
+  // Copy the cfop item
+  rpnmath_item_cfop_t result = *(rpnmath_item_cfop_t*)(stack->data + last_cfop_pos);
+  
+  // Remove the item from stack
+  size_t bytes_after = stack->size - (last_cfop_pos + last_cfop_size);
+  if (bytes_after > 0) {
+    memmove(stack->data + last_cfop_pos, 
+            stack->data + last_cfop_pos + last_cfop_size, 
+            bytes_after);
+  }
+  stack->size -= last_cfop_size;
   
   return result;
 }
@@ -454,10 +639,14 @@ int rpnmath_stack_count_constants(rpnmath_stack_t *stack) {
       count++;
       rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
       pos += sizeof(rpnmath_item_const_t) + item->size;
-    } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-      pos += sizeof(rpnmath_item_varref_t);
+    } else if (kind == RPNMATH_ITEMKIND_LREF) {
+      pos += sizeof(rpnmath_item_localref_t);
     } else if (kind == RPNMATH_ITEMKIND_OP) {
       pos += sizeof(rpnmath_item_op_t);
+    } else if (kind == RPNMATH_ITEMKIND_VOP) {
+      pos += sizeof(rpnmath_item_vop_t);
+    } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+      pos += sizeof(rpnmath_item_cfop_t);
     } else {
       pos += sizeof(rpnmath_itemkind_t);
     }
@@ -472,8 +661,15 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
     // Find the first operation in the stack (left to right scan)
     size_t pos = 0;
     size_t operation_pos = 0;
-    rpnmath_op_t operation;
+    rpnmath_itemkind_t operation_kind = RPNMATH_ITEMKIND_VOID;
     int found_operation = 0;
+    
+    // Union to hold different operation types
+    union {
+      rpnmath_item_op_t op;
+      rpnmath_item_vop_t vop;
+      rpnmath_item_cfop_t cfop;
+    } operation_item;
     
     while (pos < stack->size) {
       if (pos + sizeof(rpnmath_itemkind_t) > stack->size) break;
@@ -483,12 +679,24 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
       if (kind == RPNMATH_ITEMKIND_CONST) {
         rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
         pos += sizeof(rpnmath_item_const_t) + item->size;
-      } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-        pos += sizeof(rpnmath_item_varref_t);
+      } else if (kind == RPNMATH_ITEMKIND_LREF) {
+        pos += sizeof(rpnmath_item_localref_t);
       } else if (kind == RPNMATH_ITEMKIND_OP) {
-        rpnmath_item_op_t *op = (rpnmath_item_op_t*)(stack->data + pos);
         operation_pos = pos;
-        operation = op->operation;
+        operation_kind = kind;
+        operation_item.op = *(rpnmath_item_op_t*)(stack->data + pos);
+        found_operation = 1;
+        break;
+      } else if (kind == RPNMATH_ITEMKIND_VOP) {
+        operation_pos = pos;
+        operation_kind = kind;
+        operation_item.vop = *(rpnmath_item_vop_t*)(stack->data + pos);
+        found_operation = 1;
+        break;
+      } else if (kind == RPNMATH_ITEMKIND_CFOP) {
+        operation_pos = pos;
+        operation_kind = kind;
+        operation_item.cfop = *(rpnmath_item_cfop_t*)(stack->data + pos);
         found_operation = 1;
         break;
       } else {
@@ -502,18 +710,27 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
       return -1;
     }
     
-    int arg_count = rpnmath_op_arg_count(operation);
+    int arg_count = 0;
+    
+    // Determine argument count based on operation type
+    if (operation_kind == RPNMATH_ITEMKIND_OP) {
+      arg_count = rpnmath_op_arg_count(operation_item.op.operation);
+    } else if (operation_kind == RPNMATH_ITEMKIND_VOP) {
+      arg_count = rpnmath_vop_arg_count(operation_item.vop.operation, operation_item.vop.argcount);
+    } else if (operation_kind == RPNMATH_ITEMKIND_CFOP) {
+      // Control flow operations don't consume arguments in the same way
+      fprintf(stderr, "Error: Control flow operations not yet implemented\n");
+      return -1;
+    }
     
     // Collect operands that immediately precede this operation
-    // We need to scan backwards from the operation to collect the required operands
-    size_t operand_positions[2]; // Max 2 operands for any current operation
+    size_t operand_positions[2]; // Max 2 operands for current operations
     size_t operand_sizes[2];
     rpnmath_itemkind_t operand_kinds[2];
     int operands_found = 0;
     
     // Scan backwards from operation to find operands
     size_t scan_pos = 0;
-    size_t items_found = 0;
     
     while (scan_pos < operation_pos && operands_found < arg_count) {
       if (scan_pos + sizeof(rpnmath_itemkind_t) > operation_pos) break;
@@ -524,8 +741,8 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
       if (kind == RPNMATH_ITEMKIND_CONST) {
         rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + scan_pos);
         item_size = sizeof(rpnmath_item_const_t) + item->size;
-      } else if (kind == RPNMATH_ITEMKIND_VARREF) {
-        item_size = sizeof(rpnmath_item_varref_t);
+      } else if (kind == RPNMATH_ITEMKIND_LREF) {
+        item_size = sizeof(rpnmath_item_localref_t);
       } else {
         item_size = sizeof(rpnmath_itemkind_t);
       }
@@ -561,85 +778,234 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
     
     // Check if we have enough operands
     if (operands_found < arg_count) {
+      const char *op_name = "unknown";
+      if (operation_kind == RPNMATH_ITEMKIND_OP) {
+        op_name = rpnmath_op_name(operation_item.op.operation);
+      } else if (operation_kind == RPNMATH_ITEMKIND_VOP) {
+        op_name = rpnmath_vop_name(operation_item.vop.operation);
+      }
       fprintf(stderr, "Error: Not enough operands for operation %s (need %d, have %d)\n", 
-              rpnmath_op_name(operation), arg_count, operands_found);
+              op_name, arg_count, operands_found);
       return -1;
     }
     
-    // Handle special operations
-    if (operation == RPNMATH_OP_RETURN) {
-      // Return the last operand (should be a constant or resolved variable)
-      size_t operand_pos = operand_positions[operands_found - 1];
-      rpnmath_itemkind_t operand_kind = operand_kinds[operands_found - 1];
-      
-      if (operand_kind == RPNMATH_ITEMKIND_CONST) {
-        rpnmath_item_const_t *return_item = (rpnmath_item_const_t*)(stack->data + operand_pos);
-        // Copy the return value
-        result->kind = return_item->kind;
-        result->type = return_item->type;
-        result->size = return_item->size;
-        result->data = malloc(return_item->size);
-        memcpy(result->data, stack->data + operand_pos + sizeof(rpnmath_item_const_t), return_item->size);
-        return 0; // Success
-      } else if (operand_kind == RPNMATH_ITEMKIND_VARREF) {
-        // Resolve variable and return its value
-        rpnmath_item_varref_t *varref = (rpnmath_item_varref_t*)(stack->data + operand_pos);
-        *result = rpnmath_stack_get_variable(stack, varref->variable_id);
-        if (result->kind == RPNMATH_ITEMKIND_VOID) {
-          return -1; // Error already printed
+    // Handle VOP operations (like return)
+    if (operation_kind == RPNMATH_ITEMKIND_VOP) {
+      if (operation_item.vop.operation == RPNMATH_VOP_RET) {
+        // Return the last operand (should be a constant or resolved variable)
+        size_t operand_pos = operand_positions[operands_found - 1];
+        rpnmath_itemkind_t operand_kind = operand_kinds[operands_found - 1];
+        
+        if (operand_kind == RPNMATH_ITEMKIND_CONST) {
+          rpnmath_item_const_t *return_item = (rpnmath_item_const_t*)(stack->data + operand_pos);
+          // Copy the return value
+          result->kind = return_item->kind;
+          result->type = return_item->type;
+          result->size = return_item->size;
+          result->data = malloc(return_item->size);
+          memcpy(result->data, stack->data + operand_pos + sizeof(rpnmath_item_const_t), return_item->size);
+          return 0; // Success
+        } else if (operand_kind == RPNMATH_ITEMKIND_LREF) {
+          // Resolve variable and return its value
+          rpnmath_item_localref_t *lref = (rpnmath_item_localref_t*)(stack->data + operand_pos);
+          *result = rpnmath_stack_get_variable(stack, lref->variable_id);
+          if (result->kind == RPNMATH_ITEMKIND_VOID) {
+            return -1; // Error already printed
+          }
+          return 0; // Success
+        } else {
+          fprintf(stderr, "Error: Invalid return operand type\n");
+          return -1;
         }
-        return 0; // Success
       } else {
-        fprintf(stderr, "Error: Invalid return operand type\n");
+        fprintf(stderr, "Error: VOP operation %s not yet implemented\n", 
+                rpnmath_vop_name(operation_item.vop.operation));
         return -1;
       }
     }
     
-    if (operation == RPNMATH_OP_ASSIGN) {
-      // Assignment: operands[0] = value, operands[1] = variable reference
-      if (operands_found != 2) {
-        fprintf(stderr, "Error: Assignment requires exactly 2 operands\n");
-        return -1;
-      }
-      
-      // Get the value (operand 0) - resolve if it's a variable
-      rpnmath_item_const_t value;
-      if (operand_kinds[0] == RPNMATH_ITEMKIND_CONST) {
-        rpnmath_item_const_t *const_item = (rpnmath_item_const_t*)(stack->data + operand_positions[0]);
-        value = *const_item;
-        value.data = malloc(const_item->size);
-        memcpy(value.data, stack->data + operand_positions[0] + sizeof(rpnmath_item_const_t), const_item->size);
-      } else if (operand_kinds[0] == RPNMATH_ITEMKIND_VARREF) {
-        rpnmath_item_varref_t *varref = (rpnmath_item_varref_t*)(stack->data + operand_positions[0]);
-        value = rpnmath_stack_get_variable(stack, varref->variable_id);
-        if (value.kind == RPNMATH_ITEMKIND_VOID) {
-          return -1; // Error already printed
+    // Handle regular OP operations
+    if (operation_kind == RPNMATH_ITEMKIND_OP) {
+      if (operation_item.op.operation == RPNMATH_OP_ASSIGN) {
+        // Assignment: operands[0] = value, operands[1] = variable reference
+        if (operands_found != 2) {
+          fprintf(stderr, "Error: Assignment requires exactly 2 operands\n");
+          return -1;
         }
-      } else {
-        fprintf(stderr, "Error: Invalid assignment value type\n");
-        return -1;
-      }
-      
-      // Get the variable reference (operand 1)
-      if (operand_kinds[1] != RPNMATH_ITEMKIND_VARREF) {
-        fprintf(stderr, "Error: Assignment target must be a variable reference\n");
+        
+        // Get the value (operand 0) - resolve if it's a variable
+        rpnmath_item_const_t value;
+        if (operand_kinds[0] == RPNMATH_ITEMKIND_CONST) {
+          rpnmath_item_const_t *const_item = (rpnmath_item_const_t*)(stack->data + operand_positions[0]);
+          value = *const_item;
+          value.data = malloc(const_item->size);
+          memcpy(value.data, stack->data + operand_positions[0] + sizeof(rpnmath_item_const_t), const_item->size);
+        } else if (operand_kinds[0] == RPNMATH_ITEMKIND_LREF) {
+          rpnmath_item_localref_t *lref = (rpnmath_item_localref_t*)(stack->data + operand_positions[0]);
+          value = rpnmath_stack_get_variable(stack, lref->variable_id);
+          if (value.kind == RPNMATH_ITEMKIND_VOID) {
+            return -1; // Error already printed
+          }
+        } else {
+          fprintf(stderr, "Error: Invalid assignment value type\n");
+          return -1;
+        }
+        
+        // Get the variable reference (operand 1)
+        if (operand_kinds[1] != RPNMATH_ITEMKIND_LREF) {
+          fprintf(stderr, "Error: Assignment target must be a local reference\n");
+          if (value.data) free(value.data);
+          return -1;
+        }
+        
+        rpnmath_item_localref_t *lref = (rpnmath_item_localref_t*)(stack->data + operand_positions[1]);
+        int assign_result = rpnmath_stack_assign_variable(stack, lref->variable_id, &value);
         if (value.data) free(value.data);
+        
+        if (assign_result != 0) {
+          return -1;
+        }
+        
+        // Remove the operands and operation from stack
+        size_t total_remove_size = operand_sizes[0] + operand_sizes[1] + sizeof(rpnmath_item_op_t);
+        size_t start_remove_pos = operand_positions[0];
+        
+        // Shift everything after the operation forward
+        size_t bytes_after = stack->size - (operation_pos + sizeof(rpnmath_item_op_t));
+        if (bytes_after > 0) {
+          memmove(stack->data + start_remove_pos,
+                  stack->data + operation_pos + sizeof(rpnmath_item_op_t),
+                  bytes_after);
+        }
+        stack->size -= total_remove_size;
+        
+        continue;
+      }
+      
+      // Handle binary arithmetic operations
+      if (operands_found != 2) {
+        fprintf(stderr, "Error: Binary operation requires exactly 2 operands\n");
         return -1;
       }
       
-      rpnmath_item_varref_t *var_ref = (rpnmath_item_varref_t*)(stack->data + operand_positions[1]);
-      int assign_result = rpnmath_stack_assign_variable(stack, var_ref->variable_id, &value);
-      if (value.data) free(value.data);
+      // Get operand values (resolve variables if needed)
+      rpnmath_item_const_t operand_values[2];
       
-      if (assign_result != 0) {
-        return -1;
+      for (int i = 0; i < 2; i++) {
+        if (operand_kinds[i] == RPNMATH_ITEMKIND_CONST) {
+          rpnmath_item_const_t *const_item = (rpnmath_item_const_t*)(stack->data + operand_positions[i]);
+          operand_values[i] = *const_item;
+          operand_values[i].data = malloc(const_item->size);
+          memcpy(operand_values[i].data, stack->data + operand_positions[i] + sizeof(rpnmath_item_const_t), const_item->size);
+        } else if (operand_kinds[i] == RPNMATH_ITEMKIND_LREF) {
+          rpnmath_item_localref_t *lref = (rpnmath_item_localref_t*)(stack->data + operand_positions[i]);
+          operand_values[i] = rpnmath_stack_get_variable(stack, lref->variable_id);
+          if (operand_values[i].kind == RPNMATH_ITEMKIND_VOID) {
+            // Clean up any previously allocated operands
+            for (int j = 0; j < i; j++) {
+              if (operand_values[j].data) free(operand_values[j].data);
+            }
+            return -1; // Error already printed
+          }
+        } else {
+          fprintf(stderr, "Error: Invalid operand type for arithmetic operation\n");
+          // Clean up any previously allocated operands
+          for (int j = 0; j < i; j++) {
+            if (operand_values[j].data) free(operand_values[j].data);
+          }
+          return -1;
+        }
       }
       
-      // Remove the operands and operation from stack (remove in reverse order)
+      // Extract values (operand_values[0] is left, operand_values[1] is right)
+      long long left_val = rpnmath_get_int_value(&operand_values[0]);
+      long long right_val = rpnmath_get_int_value(&operand_values[1]);
+      long long result_val = 0;
+      
+      // Determine result bit width (promote to larger type)
+      size_t result_bitwidth = operand_values[0].type.size > operand_values[1].type.size ? 
+                              operand_values[0].type.size : operand_values[1].type.size;
+      
+      // Perform operation with overflow checking
+      switch (operation_item.op.operation) {
+        case RPNMATH_OP_ADD:
+          if (rpnmath_type_would_overflow_add(left_val, right_val)) {
+            fprintf(stderr, "Warning: Addition overflow detected, promoting type\n");
+            result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
+            if (result_bitwidth > 64) {
+              printf("TODO: Support for integers over 64 bits not implemented\n");
+              for (int i = 0; i < 2; i++) {
+                if (operand_values[i].data) free(operand_values[i].data);
+              }
+              abort();
+            }
+          }
+          result_val = left_val + right_val;
+          break;
+          
+        case RPNMATH_OP_SUB:
+          if (rpnmath_type_would_overflow_sub(left_val, right_val)) {
+            fprintf(stderr, "Warning: Subtraction overflow detected, promoting type\n");
+            result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
+            if (result_bitwidth > 64) {
+              printf("TODO: Support for integers over 64 bits not implemented\n");
+              for (int i = 0; i < 2; i++) {
+                if (operand_values[i].data) free(operand_values[i].data);
+              }
+              abort();
+            }
+          }
+          result_val = left_val - right_val;
+          break;
+          
+        case RPNMATH_OP_MUL:
+          if (rpnmath_type_would_overflow_mul(left_val, right_val)) {
+            fprintf(stderr, "Warning: Multiplication overflow detected, promoting type\n");
+            result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
+            if (result_bitwidth > 64) {
+              printf("TODO: Support for integers over 64 bits not implemented\n");
+              for (int i = 0; i < 2; i++) {
+                if (operand_values[i].data) free(operand_values[i].data);
+              }
+              abort();
+            }
+          }
+          result_val = left_val * right_val;
+          break;
+          
+        case RPNMATH_OP_DIV:
+          if (right_val == 0) {
+            fprintf(stderr, "Error: Division by zero\n");
+            for (int i = 0; i < 2; i++) {
+              if (operand_values[i].data) free(operand_values[i].data);
+            }
+            return -1;
+          }
+          result_val = left_val / right_val;
+          break;
+          
+        default:
+          fprintf(stderr, "Error: Unknown operation\n");
+          for (int i = 0; i < 2; i++) {
+            if (operand_values[i].data) free(operand_values[i].data);
+          }
+          return -1;
+      }
+      
+      // Create result item
+      rpnmath_item_const_t result_item = rpnmath_create_int_const(result_val, result_bitwidth);
+      
+      // Remove the operands and operation from stack and replace with result
       size_t total_remove_size = operand_sizes[0] + operand_sizes[1] + sizeof(rpnmath_item_op_t);
       size_t start_remove_pos = operand_positions[0];
+      size_t result_total_size = sizeof(rpnmath_item_const_t) + result_item.size;
       
-      // Shift everything after the operation forward
+      // Create temp buffer for the result
+      char *temp_result = malloc(result_total_size);
+      memcpy(temp_result, &result_item, sizeof(rpnmath_item_const_t));
+      memcpy(temp_result + sizeof(rpnmath_item_const_t), result_item.data, result_item.size);
+      
+      // Remove the old items by shifting everything after them
       size_t bytes_after = stack->size - (operation_pos + sizeof(rpnmath_item_op_t));
       if (bytes_after > 0) {
         memmove(stack->data + start_remove_pos,
@@ -648,156 +1014,22 @@ int rpnmath_stack_execute(rpnmath_stack_t *stack, rpnmath_item_const_t *result) 
       }
       stack->size -= total_remove_size;
       
-      continue;
-    }
-    
-    // Handle binary arithmetic operations
-    if (operands_found != 2) {
-      fprintf(stderr, "Error: Binary operation requires exactly 2 operands\n");
-      return -1;
-    }
-    
-    // Get operand values (resolve variables if needed)
-    rpnmath_item_const_t operand_values[2];
-    
-    for (int i = 0; i < 2; i++) {
-      if (operand_kinds[i] == RPNMATH_ITEMKIND_CONST) {
-        rpnmath_item_const_t *const_item = (rpnmath_item_const_t*)(stack->data + operand_positions[i]);
-        operand_values[i] = *const_item;
-        operand_values[i].data = malloc(const_item->size);
-        memcpy(operand_values[i].data, stack->data + operand_positions[i] + sizeof(rpnmath_item_const_t), const_item->size);
-      } else if (operand_kinds[i] == RPNMATH_ITEMKIND_VARREF) {
-        rpnmath_item_varref_t *varref = (rpnmath_item_varref_t*)(stack->data + operand_positions[i]);
-        operand_values[i] = rpnmath_stack_get_variable(stack, varref->variable_id);
-        if (operand_values[i].kind == RPNMATH_ITEMKIND_VOID) {
-          // Clean up any previously allocated operands
-          for (int j = 0; j < i; j++) {
-            if (operand_values[j].data) free(operand_values[j].data);
-          }
-          return -1; // Error already printed
-        }
-      } else {
-        fprintf(stderr, "Error: Invalid operand type for arithmetic operation\n");
-        // Clean up any previously allocated operands
-        for (int j = 0; j < i; j++) {
-          if (operand_values[j].data) free(operand_values[j].data);
-        }
-        return -1;
+      // Insert the result at the start position
+      rpnmath_stack_ensure_space(stack, result_total_size);
+      if (bytes_after > 0) {
+        memmove(stack->data + start_remove_pos + result_total_size,
+                stack->data + start_remove_pos,
+                bytes_after);
       }
+      memcpy(stack->data + start_remove_pos, temp_result, result_total_size);
+      stack->size += result_total_size;
+      
+      // Cleanup
+      free(temp_result);
+      for (int i = 0; i < 2; i++) {
+        if (operand_values[i].data) free(operand_values[i].data);
+      }
+      if (result_item.data) free(result_item.data);
     }
-    
-    // Extract values (operand_values[0] is left, operand_values[1] is right)
-    long long left_val = rpnmath_get_int_value(&operand_values[0]);
-    long long right_val = rpnmath_get_int_value(&operand_values[1]);
-    long long result_val = 0;
-    
-    // Determine result bit width (promote to larger type)
-    size_t result_bitwidth = operand_values[0].type.size > operand_values[1].type.size ? 
-                            operand_values[0].type.size : operand_values[1].type.size;
-    
-    // Perform operation with overflow checking
-    switch (operation) {
-      case RPNMATH_OP_ADD:
-        if (rpnmath_type_would_overflow_add(left_val, right_val)) {
-          fprintf(stderr, "Warning: Addition overflow detected, promoting type\n");
-          result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
-          if (result_bitwidth > 64) {
-            printf("TODO: Support for integers over 64 bits not implemented\n");
-            for (int i = 0; i < 2; i++) {
-              if (operand_values[i].data) free(operand_values[i].data);
-            }
-            abort();
-          }
-        }
-        result_val = left_val + right_val;
-        break;
-        
-      case RPNMATH_OP_SUB:
-        if (rpnmath_type_would_overflow_sub(left_val, right_val)) {
-          fprintf(stderr, "Warning: Subtraction overflow detected, promoting type\n");
-          result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
-          if (result_bitwidth > 64) {
-            printf("TODO: Support for integers over 64 bits not implemented\n");
-            for (int i = 0; i < 2; i++) {
-              if (operand_values[i].data) free(operand_values[i].data);
-            }
-            abort();
-          }
-        }
-        result_val = left_val - right_val;
-        break;
-        
-      case RPNMATH_OP_MUL:
-        if (rpnmath_type_would_overflow_mul(left_val, right_val)) {
-          fprintf(stderr, "Warning: Multiplication overflow detected, promoting type\n");
-          result_bitwidth = result_bitwidth < 64 ? result_bitwidth * 2 : 64;
-          if (result_bitwidth > 64) {
-            printf("TODO: Support for integers over 64 bits not implemented\n");
-            for (int i = 0; i < 2; i++) {
-              if (operand_values[i].data) free(operand_values[i].data);
-            }
-            abort();
-          }
-        }
-        result_val = left_val * right_val;
-        break;
-        
-      case RPNMATH_OP_DIV:
-        if (right_val == 0) {
-          fprintf(stderr, "Error: Division by zero\n");
-          for (int i = 0; i < 2; i++) {
-            if (operand_values[i].data) free(operand_values[i].data);
-          }
-          return -1;
-        }
-        result_val = left_val / right_val;
-        break;
-        
-      default:
-        fprintf(stderr, "Error: Unknown operation\n");
-        for (int i = 0; i < 2; i++) {
-          if (operand_values[i].data) free(operand_values[i].data);
-        }
-        return -1;
-    }
-    
-    // Create result item
-    rpnmath_item_const_t result_item = rpnmath_create_int_const(result_val, result_bitwidth);
-    
-    // Remove the operands and operation from stack and replace with result
-    size_t total_remove_size = operand_sizes[0] + operand_sizes[1] + sizeof(rpnmath_item_op_t);
-    size_t start_remove_pos = operand_positions[0];
-    size_t result_total_size = sizeof(rpnmath_item_const_t) + result_item.size;
-    
-    // Create temp buffer for the result
-    char *temp_result = malloc(result_total_size);
-    memcpy(temp_result, &result_item, sizeof(rpnmath_item_const_t));
-    memcpy(temp_result + sizeof(rpnmath_item_const_t), result_item.data, result_item.size);
-    
-    // Remove the old items by shifting everything after them
-    size_t bytes_after = stack->size - (operation_pos + sizeof(rpnmath_item_op_t));
-    if (bytes_after > 0) {
-      memmove(stack->data + start_remove_pos,
-              stack->data + operation_pos + sizeof(rpnmath_item_op_t),
-              bytes_after);
-    }
-    stack->size -= total_remove_size;
-    
-    // Insert the result at the start position
-    rpnmath_stack_ensure_space(stack, result_total_size);
-    if (bytes_after > 0) {
-      memmove(stack->data + start_remove_pos + result_total_size,
-              stack->data + start_remove_pos,
-              bytes_after);
-    }
-    memcpy(stack->data + start_remove_pos, temp_result, result_total_size);
-    stack->size += result_total_size;
-    
-    // Cleanup
-    free(temp_result);
-    for (int i = 0; i < 2; i++) {
-      if (operand_values[i].data) free(operand_values[i].data);
-    }
-    if (result_item.data) free(result_item.data);
   }
 }
