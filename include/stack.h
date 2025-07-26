@@ -3,17 +3,13 @@
 
 typedef struct rpnmath_stack {
   char *data;
-  long long int top;
+  size_t top;
   size_t size; // current size
-  size_t maxsize; // size the stack can expand to
+  size_t capacity; // size the stack can expand to
 } rpnmath_stack_t;
 
 // Initialize the stack
-void rpnmath_stack_init(rpnmath_stack_t *stack, size_t sizehint, size_t maxsize);
-
-// Check Stack
-int rpnmath_stack_isempty(rpnmath_stack_t *stack);
-int rpnmath_stack_isfull(rpnmath_stack_t *stack);
+void rpnmath_stack_init(rpnmath_stack_t *stack, size_t sizehint);
 
 // Push
 void rpnmath_stack_pushc(rpnmath_stack_t *stack, rpnmath_item_const_t *item);
