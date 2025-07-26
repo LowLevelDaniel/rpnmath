@@ -1,6 +1,8 @@
 #ifndef RPNMATH_TYPE_H
 #define RPNMATH_TYPE_H
 
+#include <stddef.h>
+
 typedef enum rpnmath_typekind {
   RPNMATH_TYPEKIND_VOID, // Error
   RPNMATH_TYPEKIND_INT,

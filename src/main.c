@@ -55,6 +55,11 @@ void push_number(rpnmath_stack_t *stack, long long value) {
   item.size = native_size;
   item.data = malloc(native_size);
   
+  if (!item.data) {
+    fprintf(stderr, "Memory allocation failed\n");
+    exit(1);
+  }
+  
   switch (native_size) {
     case 1: *(int8_t*)item.data = (int8_t)value; break;
     case 2: *(int16_t*)item.data = (int16_t)value; break;
@@ -62,6 +67,7 @@ void push_number(rpnmath_stack_t *stack, long long value) {
     case 8: *(int64_t*)item.data = (int64_t)value; break;
     default:
       printf("TODO: Support for integers over 64 bits not implemented\n");
+      free(item.data);
       abort();
   }
   
@@ -80,6 +86,15 @@ void push_operator(rpnmath_stack_t *stack, rpnmath_binop_t operation) {
 
 // Helper function to get the top value from stack for result
 long long get_result(rpnmath_stack_t *stack) {
+  if (rpnmath_stack_isempty(stack)) {
+    return 0;
+  }
+  
+  rpnmath_itemkind_t kind = rpnmath_stack_peekk(stack);
+  if (kind != RPNMATH_ITEMKIND_CONST) {
+    return 0;
+  }
+  
   rpnmath_item_const_t result_item = rpnmath_stack_popc(stack);
   if (result_item.kind != RPNMATH_ITEMKIND_CONST) {
     if (result_item.data) free(result_item.data);
@@ -96,37 +111,12 @@ long long get_result(rpnmath_stack_t *stack) {
     case 8: value = *(int64_t*)result_item.data; break;
     default:
       printf("TODO: Support for integers over 64 bits not implemented\n");
+      if (result_item.data) free(result_item.data);
       abort();
   }
   
-  free(result_item.data);
+  if (result_item.data) free(result_item.data);
   return value;
-}
-
-// Count constants and operators on stack
-void count_stack_items(rpnmath_stack_t *stack, int *const_count, int *binop_count) {
-  *const_count = 0;
-  *binop_count = 0;
-  
-  // This is a simplified implementation
-  // In a real implementation, you'd traverse the stack properly
-  long long pos = 0;
-  while (pos <= stack->top) {
-    if (pos + sizeof(rpnmath_itemkind_t) > (size_t)(stack->top + 1)) break;
-    
-    rpnmath_itemkind_t kind = *(rpnmath_itemkind_t*)(stack->data + pos);
-    
-    if (kind == RPNMATH_ITEMKIND_CONST) {
-      (*const_count)++;
-      rpnmath_item_const_t *item = (rpnmath_item_const_t*)(stack->data + pos);
-      pos += sizeof(rpnmath_item_const_t) + item->size;
-    } else if (kind == RPNMATH_ITEMKIND_BINOP) {
-      (*binop_count)++;
-      pos += sizeof(rpnmath_item_binop_t);
-    } else {
-      pos += sizeof(rpnmath_itemkind_t);
-    }
-  }
 }
 
 int main() {
@@ -159,10 +149,13 @@ int main() {
     
     // Construct Stack
     rpnmath_stack_t stack;
-    rpnmath_stack_init(&stack, 1024, 8192);
+    rpnmath_stack_init(&stack, 1024);
     
     // Parse expression and build stack
-    char *token = strtok(expression, " \t");
+    char *expression_copy = malloc(strlen(expression) + 1);
+    strcpy(expression_copy, expression);
+    
+    char *token = strtok(expression_copy, " \t");
     int error = 0;
     
     while (token != NULL && !error) {
@@ -182,22 +175,8 @@ int main() {
       } else if (is_operator(token)) {
         rpnmath_binop_t operation = get_operation(token);
         
-        // Check if we have enough operands
-        int const_count, binop_count;
-        count_stack_items(&stack, &const_count, &binop_count);
-        
-        if (const_count < 2) {
-          printf("Error: Not enough operands for operator '%s'\n", token);
-          error = 1;
-          break;
-        }
-        
         push_operator(&stack, operation);
         printf("  Pushed operator: %s\n", token);
-        
-        // Execute the operation
-        rpnmath_stack_execute(&stack);
-        printf("  Executed operation\n");
         
       } else {
         printf("Error: Unknown token '%s'\n", token);
@@ -209,26 +188,35 @@ int main() {
     }
     
     if (!error) {
-      // Check final stack state
-      int const_count, binop_count;
-      count_stack_items(&stack, &const_count, &binop_count);
+      // Execute the entire RPN expression
+      printf("  Executing RPN expression...\n");
+      rpnmath_stack_execute(&stack);
       
-      if (const_count == 1 && binop_count == 0) {
-        long long result = get_result(&stack);
-        printf("Result: %lld\n\n", result);
-      } else if (const_count == 0) {
-        printf("Error: No result on stack\n\n");
+      // Check final stack state - should have exactly one constant
+      if (rpnmath_stack_isempty(&stack)) {
+        printf("Error: No result on stack after execution\n\n");
       } else {
-        printf("Error: Multiple values remaining on stack (%d constants, %d operators)\n", 
-               const_count, binop_count);
-        printf("This suggests an incomplete or invalid RPN expression\n\n");
+        rpnmath_itemkind_t kind = rpnmath_stack_peekk(&stack);
+        if (kind == RPNMATH_ITEMKIND_CONST) {
+          int remaining_constants = rpnmath_stack_count_constants(&stack);
+          if (remaining_constants == 1) {
+            long long result = get_result(&stack);
+            printf("Result: %lld\n\n", result);
+          } else {
+            printf("Error: %d values remaining on stack\n", remaining_constants);
+            printf("This suggests an incomplete or invalid RPN expression\n\n");
+          }
+        } else {
+          printf("Error: Final result is not a constant value\n\n");
+        }
       }
     } else {
       printf("\n");
     }
     
-    // Clean up stack
-    free(stack.data);
+    // Clean up
+    free(expression_copy);
+    rpnmath_stack_cleanup(&stack);
   }
   
   printf("Goodbye!\n");

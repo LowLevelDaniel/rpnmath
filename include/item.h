@@ -1,6 +1,9 @@
 #ifndef RPNMATH_ITEM_H
 #define RPNMATH_ITEM_H
 
+#include <stddef.h>
+#include "type.h"
+
 typedef enum rpnmath_itemkind {
   RPNMATH_ITEMKIND_VOID,
   RPNMATH_ITEMKIND_CONST, // Constant
