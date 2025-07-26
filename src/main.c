@@ -18,21 +18,41 @@ int is_number(const char *str) {
   return *endptr == '\0';
 }
 
-// Helper function to determine if a string is an operator
-int is_operator(const char *str) {
-  return (strlen(str) == 1 && 
-          (*str == '+' || *str == '-' || *str == '*' || *str == '/'));
+// Helper function to determine if a string is an operation
+int is_operation(const char *str) {
+  if (strlen(str) != 1) return 0;
+  return (*str == '+' || *str == '-' || *str == '*' || *str == '/' || 
+          *str == '=' || *str == '.');
+}
+
+// Helper function to determine if a string is a variable reference ($0, $1, etc.)
+int is_variable(const char *str) {
+  if (!str || strlen(str) < 2 || str[0] != '$') return 0;
+  
+  // Check if everything after $ is digits
+  for (size_t i = 1; i < strlen(str); i++) {
+    if (!isdigit(str[i])) return 0;
+  }
+  
+  return 1;
 }
 
 // Helper function to get operation enum from string
-rpnmath_binop_t get_operation(const char *str) {
+rpnmath_op_t get_operation(const char *str) {
   switch (*str) {
-    case '+': return RPNMATH_BINOP_ADD;
-    case '-': return RPNMATH_BINOP_SUB;
-    case '*': return RPNMATH_BINOP_MUL;
-    case '/': return RPNMATH_BINOP_DIV;
-    default: return RPNMATH_BINOP_ADD; // fallback
+    case '+': return RPNMATH_OP_ADD;
+    case '-': return RPNMATH_OP_SUB;
+    case '*': return RPNMATH_OP_MUL;
+    case '/': return RPNMATH_OP_DIV;
+    case '=': return RPNMATH_OP_ASSIGN;
+    case '.': return RPNMATH_OP_RETURN;
+    default: return RPNMATH_OP_ADD; // fallback
   }
+}
+
+// Helper function to get variable ID from string ($0 -> 0, $1 -> 1, etc.)
+size_t get_variable_id(const char *str) {
+  return (size_t)strtoul(str + 1, NULL, 10); // skip the '$' character
 }
 
 // Helper function to determine appropriate bit width for a number
@@ -75,58 +95,57 @@ void push_number(rpnmath_stack_t *stack, long long value) {
   free(item.data);
 }
 
-// Helper function to create and push an operator to stack
-void push_operator(rpnmath_stack_t *stack, rpnmath_binop_t operation) {
-  rpnmath_item_binop_t item = {0};
-  item.kind = RPNMATH_ITEMKIND_BINOP;
+// Helper function to create and push an operation to stack
+void push_operation(rpnmath_stack_t *stack, rpnmath_op_t operation) {
+  rpnmath_item_op_t item = {0};
+  item.kind = RPNMATH_ITEMKIND_OP;
   item.operation = operation;
   
-  rpnmath_stack_pushbo(stack, &item);
+  rpnmath_stack_pushop(stack, &item);
 }
 
-// Helper function to get the top value from stack for result
-long long get_result(rpnmath_stack_t *stack) {
-  if (rpnmath_stack_isempty(stack)) {
+// Helper function to create and push a variable reference to stack
+void push_variable(rpnmath_stack_t *stack, size_t var_id) {
+  rpnmath_item_varref_t item = {0};
+  item.kind = RPNMATH_ITEMKIND_VARREF;
+  item.variable_id = var_id;
+  
+  rpnmath_stack_pushvr(stack, &item);
+}
+
+// Helper function to get the result value from a const item
+long long get_result_value(rpnmath_item_const_t *result_item) {
+  if (result_item->kind != RPNMATH_ITEMKIND_CONST) {
     return 0;
   }
   
-  rpnmath_itemkind_t kind = rpnmath_stack_peekk(stack);
-  if (kind != RPNMATH_ITEMKIND_CONST) {
-    return 0;
-  }
-  
-  rpnmath_item_const_t result_item = rpnmath_stack_popc(stack);
-  if (result_item.kind != RPNMATH_ITEMKIND_CONST) {
-    if (result_item.data) free(result_item.data);
-    return 0;
-  }
-  
-  size_t native_size = rpnmath_type_native_size(result_item.type.size);
+  size_t native_size = rpnmath_type_native_size(result_item->type.size);
   long long value = 0;
   
   switch (native_size) {
-    case 1: value = *(int8_t*)result_item.data; break;
-    case 2: value = *(int16_t*)result_item.data; break;
-    case 4: value = *(int32_t*)result_item.data; break;
-    case 8: value = *(int64_t*)result_item.data; break;
+    case 1: value = *(int8_t*)result_item->data; break;
+    case 2: value = *(int16_t*)result_item->data; break;
+    case 4: value = *(int32_t*)result_item->data; break;
+    case 8: value = *(int64_t*)result_item->data; break;
     default:
       printf("TODO: Support for integers over 64 bits not implemented\n");
-      if (result_item.data) free(result_item.data);
       abort();
   }
   
-  if (result_item.data) free(result_item.data);
   return value;
 }
 
 int main() {
   char expression[1000];
   
-  printf("Reverse Polish Notation Calculator\n");
-  printf("==================================\n");
+  printf("RPN Calculator with SSA Variables\n");
+  printf("=================================\n");
   printf("Supported operators: +, -, *, /\n");
-  printf("Example: \"3 4 +\" calculates 3 + 4 = 7\n");
-  printf("Example: \"15 7 1 1 + - / 3 * 2 1 1 + + -\" calculates a complex expression\n");
+  printf("Variables: $0, $1, $2, ... (single static assignment)\n");
+  printf("Assignment: = (assigns top stack value to variable)\n");
+  printf("Return: . (returns top stack value and stops execution)\n");
+  printf("Example: \"10 $0 = 20 $0 + .\" assigns 10 to $0, then returns $0 + 20\n");
+  printf("Example: \"5 $0 = 3 $1 = $0 $1 * .\" assigns 5 to $0, 3 to $1, returns $0 * $1\n");
   printf("Enter 'quit' to exit\n\n");
   
   while (1) {
@@ -172,11 +191,23 @@ int main() {
         push_number(&stack, value);
         printf("  Pushed number: %lld\n", value);
         
-      } else if (is_operator(token)) {
-        rpnmath_binop_t operation = get_operation(token);
+      } else if (is_variable(token)) {
+        size_t var_id = get_variable_id(token);
         
-        push_operator(&stack, operation);
-        printf("  Pushed operator: %s\n", token);
+        if (var_id >= RPNMATH_MAX_VARIABLES) {
+          printf("Error: Variable ID %zu exceeds maximum %d\n", var_id, RPNMATH_MAX_VARIABLES - 1);
+          error = 1;
+          break;
+        }
+        
+        push_variable(&stack, var_id);
+        printf("  Pushed variable reference: $%zu\n", var_id);
+        
+      } else if (is_operation(token)) {
+        rpnmath_op_t operation = get_operation(token);
+        
+        push_operation(&stack, operation);
+        printf("  Pushed operation: %s (%s)\n", token, rpnmath_op_name(operation));
         
       } else {
         printf("Error: Unknown token '%s'\n", token);
@@ -190,25 +221,19 @@ int main() {
     if (!error) {
       // Execute the entire RPN expression
       printf("  Executing RPN expression...\n");
-      rpnmath_stack_execute(&stack);
+      rpnmath_item_const_t result;
+      int exec_result = rpnmath_stack_execute(&stack, &result);
       
-      // Check final stack state - should have exactly one constant
-      if (rpnmath_stack_isempty(&stack)) {
-        printf("Error: No result on stack after execution\n\n");
-      } else {
-        rpnmath_itemkind_t kind = rpnmath_stack_peekk(&stack);
-        if (kind == RPNMATH_ITEMKIND_CONST) {
-          int remaining_constants = rpnmath_stack_count_constants(&stack);
-          if (remaining_constants == 1) {
-            long long result = get_result(&stack);
-            printf("Result: %lld\n\n", result);
-          } else {
-            printf("Error: %d values remaining on stack\n", remaining_constants);
-            printf("This suggests an incomplete or invalid RPN expression\n\n");
-          }
-        } else {
-          printf("Error: Final result is not a constant value\n\n");
+      if (exec_result == 0) {
+        long long result_value = get_result_value(&result);
+        printf("Result: %lld\n\n", result_value);
+        
+        // Clean up result data
+        if (result.data) {
+          free(result.data);
         }
+      } else {
+        printf("Error: Execution failed\n\n");
       }
     } else {
       printf("\n");
