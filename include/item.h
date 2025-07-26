@@ -19,6 +19,13 @@ typedef enum rpnmath_op {
   RPNMATH_OP_MUL,    // (Value,Value)-> Value
   RPNMATH_OP_DIV,    // (Value,Value)-> Value
   RPNMATH_OP_ASSIGN, // (Value, Variable) -> Void
+  // Comparison operations
+  RPNMATH_OP_EQ,     // (Value,Value)-> Bool (==)
+  RPNMATH_OP_NE,     // (Value,Value)-> Bool (!=)
+  RPNMATH_OP_LT,     // (Value,Value)-> Bool (<)
+  RPNMATH_OP_LE,     // (Value,Value)-> Bool (<=)
+  RPNMATH_OP_GT,     // (Value,Value)-> Bool (>)
+  RPNMATH_OP_GE,     // (Value,Value)-> Bool (>=)
 } rpnmath_op_t;
 
 typedef enum rpnmath_vop {
@@ -34,6 +41,7 @@ typedef enum rpnmath_cfop {
   RPNMATH_CFOP_WHILE, // COND
   RPNMATH_CFOP_MERGE, //
   RPNMATH_CFOP_END, // END
+  RPNMATH_CFOP_PHI, // PHI node for SSA
 } rpnmath_cfop_t;
 
 typedef struct rpnmath_item {
@@ -68,6 +76,16 @@ typedef struct rpnmath_item_vop {
 typedef struct rpnmath_item_cfop {
   rpnmath_itemkind_t kind;
   rpnmath_cfop_t operation;
+  union {
+    struct {
+      size_t target_var;    // For PHI: target variable
+      size_t source_count;  // For PHI: number of source variables
+      size_t *source_vars;  // For PHI: array of source variable IDs
+    } phi;
+    struct {
+      size_t block_id;      // For control flow: target block ID
+    } cf;
+  };
 } rpnmath_item_cfop_t;
 
 // Helper functions to get operation properties

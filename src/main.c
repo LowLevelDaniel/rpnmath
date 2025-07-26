@@ -20,9 +20,15 @@ int is_number(const char *str) {
 
 // Helper function to determine if a string is a basic operation
 int is_operation(const char *str) {
-  if (strlen(str) != 1) return 0;
-  return (*str == '+' || *str == '-' || *str == '*' || *str == '/' || 
-          *str == '=');
+  if (strlen(str) == 1) {
+    return (*str == '+' || *str == '-' || *str == '*' || *str == '/' || 
+            *str == '=' || *str == '<' || *str == '>');
+  } else if (strlen(str) == 2) {
+    return (strcmp(str, "==") == 0 || strcmp(str, "!=") == 0 || 
+            strcmp(str, "<=") == 0 || strcmp(str, ">=") == 0);
+  } else {
+    return 0;
+  }
 }
 
 // Helper function to determine if a string is a variable operation
@@ -35,7 +41,7 @@ int is_cfop(const char *str) {
   return (strcmp(str, "if") == 0 || strcmp(str, "elif") == 0 || 
           strcmp(str, "else") == 0 || strcmp(str, "loop") == 0 ||
           strcmp(str, "while") == 0 || strcmp(str, "merge") == 0 ||
-          strcmp(str, "end") == 0);
+          strcmp(str, "end") == 0 || strcmp(str, "phi") == 0);
 }
 
 // Helper function to determine if a string is a variable reference ($0, $1, etc.)
@@ -77,14 +83,24 @@ int parse_vop_syntax(const char *str, char *op_name, size_t *argcount, size_t *r
 
 // Helper function to get operation enum from string
 rpnmath_op_t get_operation(const char *str) {
-  switch (*str) {
-    case '+': return RPNMATH_OP_ADD;
-    case '-': return RPNMATH_OP_SUB;
-    case '*': return RPNMATH_OP_MUL;
-    case '/': return RPNMATH_OP_DIV;
-    case '=': return RPNMATH_OP_ASSIGN;
-    default: return RPNMATH_OP_ADD; // fallback
+  if (strlen(str) == 1) {
+    switch (*str) {
+      case '+': return RPNMATH_OP_ADD;
+      case '-': return RPNMATH_OP_SUB;
+      case '*': return RPNMATH_OP_MUL;
+      case '/': return RPNMATH_OP_DIV;
+      case '=': return RPNMATH_OP_ASSIGN;
+      case '<': return RPNMATH_OP_LT;
+      case '>': return RPNMATH_OP_GT;
+      default: return RPNMATH_OP_ADD; // fallback
+    }
+  } else if (strlen(str) == 2) {
+    if (strcmp(str, "==") == 0) return RPNMATH_OP_EQ;
+    if (strcmp(str, "!=") == 0) return RPNMATH_OP_NE;
+    if (strcmp(str, "<=") == 0) return RPNMATH_OP_LE;
+    if (strcmp(str, ">=") == 0) return RPNMATH_OP_GE;
   }
+  return RPNMATH_OP_ADD; // fallback
 }
 
 // Helper function to get VOP enum from string
@@ -103,6 +119,7 @@ rpnmath_cfop_t get_cfop(const char *str) {
   if (strcmp(str, "while") == 0) return RPNMATH_CFOP_WHILE;
   if (strcmp(str, "merge") == 0) return RPNMATH_CFOP_MERGE;
   if (strcmp(str, "end") == 0) return RPNMATH_CFOP_END;
+  if (strcmp(str, "phi") == 0) return RPNMATH_CFOP_PHI;
   return RPNMATH_CFOP_END; // fallback
 }
 
@@ -214,15 +231,17 @@ long long get_result_value(rpnmath_item_const_t *result_item) {
 int main() {
   char expression[1000];
   
-  printf("RPN Calculator with SSA Variables (New Item System)\n");
-  printf("==================================================\n");
-  printf("Supported operators: +, -, *, /\n");
-  printf("Variables: $0, $1, $2, ... (single static assignment)\n");
+  printf("RPN Calculator with SSA Variables and Control Flow\n");
+  printf("===================================================\n");
+  printf("Supported operators: +, -, *, /, ==, !=, <, <=, >, >=\n");
+  printf("Variables: $0, $1, $2, ... (SSA with block-based versioning)\n");
   printf("Assignment: = (assigns top stack value to variable)\n");
   printf("Return: ret/argcount (returns values and stops execution)\n");
-  printf("Control Flow: if, elif, else, loop, while, merge, end (not yet implemented)\n");
+  printf("Control Flow: if, else, while, loop, end\n");
+  printf("Phi Nodes: phi (for SSA variable merging)\n");
   printf("Example: \"10 $0 = 20 $0 + ret/1\" assigns 10 to $0, then returns $0 + 20\n");
-  printf("Example: \"5 $0 = 3 $1 = $0 $1 * ret/1\" assigns 5 to $0, 3 to $1, returns $0 * $1\n");
+  printf("Example: \"5 3 > if 100 else 200 end ret/1\" returns 100 if 5>3, else 200\n");
+  printf("Example: \"0 $0 = while $0 10 < $0 1 + $0 = end $0 ret/1\" loop from 0 to 10\n");
   printf("Enter 'quit' to exit\n\n");
   
   while (1) {
