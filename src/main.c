@@ -9,6 +9,22 @@
 #include "item.h"
 #include "stack.h"
 
+10 10 +
+[20]
+
+10 10 10 +
+[10 20]
+
+// 0x1000 has to be loaded at runtime and can always be different
+// in these situations the resulting stack value has to include the instructions
+// this is the general idea for optimization utilzing RPN stack parsing
+0x1000 load $x = 10 $x + $y = 
+[0x100 load $x = 10 $x + $y =]
+
+10 10 + $x =
+[20 $x =]
+
+
 // Helper function to determine if a string is a number
 int is_number(const char *str) {
   if (!str || *str == '\0') return 0;
@@ -240,7 +256,7 @@ int main() {
   printf("Control Flow: if, else, while, loop, end\n");
   printf("Phi Nodes: phi (for SSA variable merging)\n");
   printf("Example: \"10 $0 = 20 $0 + ret/1\" assigns 10 to $0, then returns $0 + 20\n");
-  printf("Example: \"5 3 > if 100 else 200 end ret/1\" returns 100 if 5>3, else 200\n");
+  printf("Example: \"5 3 > if 100 ret/1 else 200 ret/1 end\" returns 100 if 5>3, else 200\n");
   printf("Example: \"0 $0 = while $0 10 < $0 1 + $0 = end $0 ret/1\" loop from 0 to 10\n");
   printf("Enter 'quit' to exit\n\n");
   
